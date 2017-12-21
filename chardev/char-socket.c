@@ -1315,6 +1315,67 @@ static bool qmp_chardev_validate_socket(ChardevSocket *sock,
     return true;
 }
 
+#ifndef _WIN32
+static void chardev_open_socket_cmd(Chardev *chr,
+                                    const char *cmd,
+                                    Error **errp)
+{
+    int fds[2] = { -1, -1 };
+    QIOChannelSocket *sioc = NULL;
+    pid_t pid = -1;
+    const char *argv[] = { "/bin/sh", "-c", cmd, NULL };
+
+    /*
+     * We need a Unix domain socket for commands like swtpm and a single
+     * connection, therefore we cannot use qio_channel_command_new_spawn()
+     * without patching it first. Duplicating the functionality is easier.
+     */
+    if (socketpair(AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC, 0, fds)) {
+        error_setg_errno(errp, errno, "Error creating socketpair(AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC)");
+        goto error;
+    }
+
+    pid = qemu_fork(errp);
+    if (pid < 0) {
+        goto error;
+    }
+
+    if (!pid) {
+        /* child */
+        dup2(fds[1], STDIN_FILENO);
+        execv(argv[0], (char * const *)argv);
+        _exit(1);
+    }
+
+    /*
+     * Hand over our end of the socket pair to the qio channel.
+     *
+     * We don't reap the child because it is expected to keep
+     * running. We also don't support the "reconnect" option for the
+     * same reason.
+     */
+    sioc = qio_channel_socket_new_fd(fds[0], errp);
+    if (!sioc) {
+        goto error;
+    }
+    fds[0] = -1;
+
+    g_free(chr->filename);
+    chr->filename = g_strdup_printf("cmd:%s", cmd);
+    tcp_chr_new_client(chr, sioc);
+
+ error:
+    if (fds[0] >= 0) {
+        close(fds[0]);
+    }
+    if (fds[1] >= 0) {
+        close(fds[1]);
+    }
+    if (sioc) {
+        object_unref(OBJECT(sioc));
+    }
+}
+#endif
 
 static void qmp_chardev_open_socket(Chardev *chr,
                                     ChardevBackend *backend,
@@ -1323,6 +1384,9 @@ static void qmp_chardev_open_socket(Chardev *chr,
 {
     SocketChardev *s = SOCKET_CHARDEV(chr);
     ChardevSocket *sock = backend->u.socket.data;
+#ifndef _WIN32
+    const char *cmd     = sock->cmd;
+#endif
     bool do_nodelay     = sock->has_nodelay ? sock->nodelay : false;
     bool is_listen      = sock->has_server  ? sock->server  : true;
     bool is_telnet      = sock->has_telnet  ? sock->telnet  : false;
@@ -1393,6 +1457,14 @@ static void qmp_chardev_open_socket(Chardev *chr,
 
     update_disconnected_filename(s);
 
+#ifndef _WIN32
+    if (cmd) {
+        chardev_open_socket_cmd(chr, cmd, errp);
+
+        /* everything ready (or failed permanently) before we return */
+        *be_opened = true;
+    } else
+#endif
     if (s->is_listen) {
         if (qmp_chardev_open_socket_server(chr, is_telnet || is_tn3270,
                                            is_waitconnect, errp) < 0) {
@@ -1412,12 +1484,29 @@ static void qemu_chr_parse_socket(QemuOpts *opts, ChardevBackend *backend,
     const char *host = qemu_opt_get(opts, "host");
     const char *port = qemu_opt_get(opts, "port");
     const char *fd = qemu_opt_get(opts, "fd");
+#ifndef _WIN32
+    const char *cmd = qemu_opt_get(opts, "cmd");
+#endif
 #ifdef CONFIG_LINUX
     bool tight = qemu_opt_get_bool(opts, "tight", true);
     bool abstract = qemu_opt_get_bool(opts, "abstract", false);
 #endif
     SocketAddressLegacy *addr;
     ChardevSocket *sock;
+
+#ifndef _WIN32
+    if (cmd) {
+        /*
+         * Here we have to ensure that no options are set which are incompatible with
+         * spawning a command, otherwise unmodified code that doesn't know about
+         * command spawning (like socket_reconnect_timeout()) might get called.
+         */
+        if (path || sock->server || sock->has_telnet || sock->has_tn3270 || sock->reconnect || host || port || sock->tls_creds) {
+            error_setg(errp, "chardev: socket: cmd does not support any additional options");
+            return;
+        }
+    } else
+#endif
 
     if ((!!path + !!fd + !!host) > 1) {
         error_setg(errp,
@@ -1469,13 +1558,24 @@ static void qemu_chr_parse_socket(QemuOpts *opts, ChardevBackend *backend,
     sock->tls_creds = g_strdup(qemu_opt_get(opts, "tls-creds"));
     sock->has_tls_authz = qemu_opt_get(opts, "tls-authz");
     sock->tls_authz = g_strdup(qemu_opt_get(opts, "tls-authz"));
+#ifndef _WIN32
+    sock->cmd = g_strdup(cmd);
+#endif
 
     addr = g_new0(SocketAddressLegacy, 1);
+#ifndef _WIN32
+    if (path || cmd) {
+#else
     if (path) {
+#endif
         UnixSocketAddress *q_unix;
         addr->type = SOCKET_ADDRESS_TYPE_UNIX;
         q_unix = addr->u.q_unix.data = g_new0(UnixSocketAddress, 1);
+#ifndef _WIN32
+        q_unix->path = cmd ? g_strdup_printf("cmd:%s", cmd) : g_strdup(path);
+#else
         q_unix->path = g_strdup(path);
+#endif
 #ifdef CONFIG_LINUX
         q_unix->has_tight = true;
         q_unix->tight = tight;
