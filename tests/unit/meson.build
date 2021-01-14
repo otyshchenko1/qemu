@@ -44,9 +44,9 @@ tests = {
   'test-keyval': [testqapi],
   'test-logging': [],
   'test-uuid': [],
-  'ptimer-test': ['ptimer-test-stubs.c', meson.project_source_root() / 'hw/core/ptimer.c'],
+  'ptimer-test': ['ptimer-test-stubs.c', '../../hw/core/ptimer.c'],
   'test-qapi-util': [],
-  'test-smp-parse': [qom, meson.project_source_root() / 'hw/core/machine-smp.c'],
+  'test-smp-parse': [qom, '../../hw/core/machine-smp.c'],
 }
 
 if have_system or have_tools
