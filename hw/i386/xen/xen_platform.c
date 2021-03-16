@@ -29,6 +29,7 @@
 #include "hw/pci/pci.h"
 #include "hw/xen/xen_common.h"
 #include "migration/vmstate.h"
+#include "hw/virtio/virtio-bus.h"
 #include "hw/xen/xen-legacy-backend.h"
 #include "trace.h"
 #include "sysemu/xen.h"
@@ -113,7 +114,8 @@ static void unplug_nic(PCIBus *b, PCIDevice *d, void *o)
     /* We have to ignore passthrough devices */
     if (pci_get_word(d->config + PCI_CLASS_DEVICE) ==
             PCI_CLASS_NETWORK_ETHERNET
-            && strcmp(d->name, "xen-pci-passthrough") != 0) {
+            && strcmp(d->name, "xen-pci-passthrough") != 0
+            && !qdev_get_child_bus(&d->qdev, TYPE_VIRTIO_BUS)) {
         object_unparent(OBJECT(d));
     }
 }
@@ -142,6 +144,11 @@ static void unplug_disks(PCIBus *b, PCIDevice *d, void *opaque)
 
     /* We have to ignore passthrough devices */
     if (!strcmp(d->name, "xen-pci-passthrough")) {
+        return;
+    }
+
+    /* Ignore virtio devices */
+    if (qdev_get_child_bus(&d->qdev, TYPE_VIRTIO_BUS)) {
         return;
     }
 
