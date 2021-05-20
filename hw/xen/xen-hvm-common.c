@@ -10,7 +10,7 @@
 #include "hw/boards.h"
 #include "hw/xen/arch_hvm.h"
 
-MemoryRegion ram_memory;
+MemoryRegion ram_memory, *ram_grants;
 
 MemoryListener xen_io_listener = {
     .name = "xen-io",
@@ -743,7 +743,7 @@ void xen_ram_alloc(ram_addr_t ram_addr, ram_addr_t size, MemoryRegion *mr,
         return;
     }
 
-    if (mr == &ram_memory) {
+    if (mr == &ram_memory || mr == ram_grants) {
         return;
     }
 
