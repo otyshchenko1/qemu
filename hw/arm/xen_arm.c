@@ -99,26 +99,18 @@ static int xen_init_ioreq(XenIOState *state, unsigned int max_cpus)
     return 0;
 }
 
-
-static void xen_arm_init(MachineState *machine)
+static void xen_enable_tpm(void)
 {
+#ifdef CONFIG_TPM
+    Error *errp = NULL;
     DeviceState *dev;
     SysBusDevice *busdev;
-    Error *errp = NULL;
-    XenArmState *xam = XEN_ARM(machine);
-
-    xam->state =  g_new0(XenIOState, 1);
-
-    if (xen_init_ioreq(xam->state, machine->smp.cpus)) {
-        return;
-    }
 
     TPMBackend *be = qemu_find_tpm_be("tpm0");
     if (be == NULL) {
         DPRINTF("Couldn't fine the backend for tpm0\n");
         return;
     }
-
     dev = qdev_new(TYPE_TPM_TIS_SYSBUS);
     object_property_set_link(OBJECT(dev), "tpmdev", OBJECT(be), &errp);
     object_property_set_str(OBJECT(dev), "tpmdev", be->id, &errp);
@@ -127,6 +119,20 @@ static void xen_arm_init(MachineState *machine)
     sysbus_mmio_map(busdev, 0, GUEST_TPM_BASE);
 
     DPRINTF("Connected tpmdev at address 0x%lx\n", GUEST_TPM_BASE);
+#endif
+}
+
+static void xen_arm_init(MachineState *machine)
+{
+    XenArmState *xam = XEN_ARM(machine);
+
+    xam->state =  g_new0(XenIOState, 1);
+
+    if (xen_init_ioreq(xam->state, machine->smp.cpus)) {
+        return;
+    }
+
+    xen_enable_tpm();
 
     return;
 }
