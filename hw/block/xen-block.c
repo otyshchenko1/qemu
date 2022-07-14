@@ -203,6 +203,7 @@ static void xen_block_realize(XenDevice *xendev, Error **errp)
     XenBlockVdev *vdev = &blockdev->props.vdev;
     BlockConf *conf = &blockdev->props.conf;
     BlockBackend *blk = conf->blk;
+    XenBus *xenbus = XEN_BUS(qdev_get_parent_bus(DEVICE(xendev)));
 
     if (vdev->type == XEN_BLOCK_VDEV_TYPE_INVALID) {
         error_setg(errp, "vdev property not set");
@@ -261,10 +262,12 @@ static void xen_block_realize(XenDevice *xendev, Error **errp)
                               blockdev->props.max_ring_page_order);
     xen_device_backend_printf(xendev, "info", "%u", blockdev->info);
 
-    xen_device_frontend_printf(xendev, "virtual-device", "%lu",
-                               vdev->number);
-    xen_device_frontend_printf(xendev, "device-type", "%s",
-                               blockdev->device_type);
+    if (xenbus->backend_id == 0) {
+        xen_device_frontend_printf(xendev, "virtual-device", "%lu",
+                                   vdev->number);
+        xen_device_frontend_printf(xendev, "device-type", "%s",
+                                   blockdev->device_type);
+    }
 
     xen_device_backend_printf(xendev, "sector-size", "%u",
                               conf->logical_block_size);
