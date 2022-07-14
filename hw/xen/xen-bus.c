@@ -771,8 +771,9 @@ static void xen_device_backend_destroy(XenDevice *xendev)
 
     g_assert(xenbus->xsh);
 
-    xs_node_destroy(xenbus->xsh, XBT_NULL, xendev->backend_path,
-                    &local_err);
+    if (xenbus->backend_id == 0)
+        xs_node_destroy(xenbus->xsh, XBT_NULL, xendev->backend_path,
+                        &local_err);
     g_free(xendev->backend_path);
     xendev->backend_path = NULL;
 
@@ -933,8 +934,9 @@ static void xen_device_frontend_destroy(XenDevice *xendev)
 
     g_assert(xenbus->xsh);
 
-    xs_node_destroy(xenbus->xsh, XBT_NULL, xendev->frontend_path,
-                    &local_err);
+    if (xenbus->backend_id == 0)
+        xs_node_destroy(xenbus->xsh, XBT_NULL, xendev->frontend_path,
+                        &local_err);
     g_free(xendev->frontend_path);
     xendev->frontend_path = NULL;
 
