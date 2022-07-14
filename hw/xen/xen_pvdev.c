@@ -60,9 +60,9 @@ void xen_config_cleanup(void)
 
 int xenstore_mkdir(char *path, int p)
 {
-    struct xs_permissions perms[2] = {
+    unsigned int num;
+    struct xs_permissions *tmp, perms[2] = {
         {
-            .id    = 0, /* set owner: dom0 */
         }, {
             .id    = xen_domid,
             .perms = p,
@@ -74,6 +74,14 @@ int xenstore_mkdir(char *path, int p)
         return -1;
     }
     xenstore_cleanup_dir(g_strdup(path));
+
+    tmp = xs_get_permissions(xenstore, 0, path, &num);
+    if (tmp == NULL) {
+        xen_pv_printf(NULL, 0, "xs_get_permissions %s: failed\n", path);
+        return -1;
+    }
+    perms[0].id = tmp[0].id; /* retain the owner */
+    free(tmp);
 
     if (!xs_set_permissions(xenstore, 0, path, perms, 2)) {
         xen_pv_printf(NULL, 0, "xs_set_permissions %s: failed\n", path);
