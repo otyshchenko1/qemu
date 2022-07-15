@@ -661,6 +661,9 @@ static void xen_device_backend_changed(void *opaque)
         xen_device_backend_set_state(xendev, XenbusStateClosed);
     }
 
+    if (xen_device_backend_get_state(xendev) == XenbusStateClosed)
+        xen_device_backend_set_online(xendev, false);
+
     /*
      * If a backend is still 'online' then we should leave it alone but,
      * if a backend is not 'online', then the device is a candidate
