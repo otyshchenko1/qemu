@@ -34,6 +34,7 @@
 #include "hw/xen/xen-hvm-common.h"
 #include "sysemu/tpm.h"
 #include "hw/xen/arch_hvm.h"
+#include "exec/address-spaces.h"
 
 #define TYPE_XEN_ARM  MACHINE_TYPE_NAME("xenpv")
 OBJECT_DECLARE_SIMPLE_TYPE(XenArmState, XEN_ARM)
@@ -57,6 +58,8 @@ struct XenArmState {
     const MemMapEntry *memmap;
     const int *irqmap;
 };
+
+static MemoryRegion ram_lo, ram_hi;
 
 #define VIRTIO_MMIO_DEV_SIZE   0x200
 
@@ -92,6 +95,38 @@ static void xen_create_virtio_mmio_devices(XenArmState *xam)
 
         DPRINTF("Created virtio-mmio device %d: irq %d base 0x%lx\n",
                 i, xam->irqmap[VIRTIO_MMIO_IDX] + i, base);
+    }
+}
+
+static void xen_init_ram(MachineState *machine)
+{
+    MemoryRegion *sysmem = get_system_memory();
+    ram_addr_t block_len, ram_size[GUEST_RAM_BANKS];
+
+    if (machine->ram_size <= GUEST_RAM0_SIZE) {
+        ram_size[0] = machine->ram_size;
+        ram_size[1] = 0;
+        block_len = GUEST_RAM0_BASE + ram_size[0];
+    } else {
+        ram_size[0] = GUEST_RAM0_SIZE;
+        ram_size[1] = machine->ram_size - GUEST_RAM0_SIZE;
+        block_len = GUEST_RAM1_BASE + ram_size[1];
+    }
+
+    memory_region_init_ram(&ram_memory, NULL, "xen.ram", block_len, &error_fatal);
+
+    memory_region_init_alias(&ram_lo, NULL, "xen.ram.lo", &ram_memory,
+                             GUEST_RAM0_BASE, ram_size[0]);
+    memory_region_add_subregion(sysmem, GUEST_RAM0_BASE, &ram_lo);
+    DPRINTF("Initialized region xen.ram.lo: base 0x%llx size 0x%lx\n",
+            GUEST_RAM0_BASE, ram_size[0]);
+
+    if (ram_size[1] > 0) {
+        memory_region_init_alias(&ram_hi, NULL, "xen.ram.hi", &ram_memory,
+                                 GUEST_RAM1_BASE, ram_size[1]);
+        memory_region_add_subregion(sysmem, GUEST_RAM1_BASE, &ram_hi);
+        DPRINTF("Initialized region xen.ram.hi: base 0x%llx size 0x%lx\n",
+                GUEST_RAM1_BASE, ram_size[1]);
     }
 }
 
@@ -166,6 +201,11 @@ static void xen_arm_init(MachineState *machine)
 {
     XenArmState *xam = XEN_ARM(machine);
 
+    if (machine->ram_size == 0) {
+        error_report("xenpv: ram_size must be specified");
+        exit(1);
+    }
+
     xam->state =  g_new0(XenIOState, 1);
     xam->memmap = xen_memmap;
     xam->irqmap = xen_irqmap;
@@ -174,6 +214,7 @@ static void xen_arm_init(MachineState *machine)
         return;
     }
 
+    xen_init_ram(machine);
     xen_create_virtio_mmio_devices(xam);
 
     xen_enable_tpm();
@@ -188,6 +229,8 @@ static void xen_arm_machine_class_init(ObjectClass *oc, void *data)
     mc->desc = "Xen Para-virtualized PC";
     mc->init = xen_arm_init;
     mc->max_cpus = GUEST_MAX_VCPUS;
+    /* Set explicitly here to make sure that real ram_size is passed */
+    mc->default_ram_size = 0;
     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_TPM_TIS_SYSBUS);
 }
 
