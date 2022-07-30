@@ -25,6 +25,7 @@
 #include "qemu/error-report.h"
 #include "qapi/qapi-commands-migration.h"
 #include "hw/boards.h"
+#include "hw/irq.h"
 #include "hw/sysbus.h"
 #include "sysemu/block-backend.h"
 #include "sysemu/tpm_backend.h"
@@ -53,7 +54,46 @@ struct XenArmState {
     MachineState parent;
 
     XenIOState *state;
+    const MemMapEntry *memmap;
+    const int *irqmap;
 };
+
+#define VIRTIO_MMIO_DEV_SIZE   0x200
+
+#define VIRTIO_MMIO_IDX   0
+
+#define NR_VIRTIO_MMIO_DEVICES   \
+   (GUEST_VIRTIO_MMIO_SPI_LAST - GUEST_VIRTIO_MMIO_SPI_FIRST)
+
+static const MemMapEntry xen_memmap[] = {
+    [VIRTIO_MMIO_IDX] = { GUEST_VIRTIO_MMIO_BASE, VIRTIO_MMIO_DEV_SIZE },
+};
+
+static const int xen_irqmap[] = {
+    [VIRTIO_MMIO_IDX] = GUEST_VIRTIO_MMIO_SPI_FIRST, /* ...to GUEST_VIRTIO_MMIO_SPI_LAST - 1 */
+};
+
+static void xen_set_irq(void *opaque, int irq, int level)
+{
+    xendevicemodel_set_irq_level(xen_dmod, xen_domid, irq, level);
+}
+
+static void xen_create_virtio_mmio_devices(XenArmState *xam)
+{
+    hwaddr size = xam->memmap[VIRTIO_MMIO_IDX].size;
+    int i;
+
+    for (i = 0; i < NR_VIRTIO_MMIO_DEVICES; i++) {
+        hwaddr base = xam->memmap[VIRTIO_MMIO_IDX].base + i * size;
+        qemu_irq irq = qemu_allocate_irq(xen_set_irq, NULL,
+                                         xam->irqmap[VIRTIO_MMIO_IDX] + i);
+
+        sysbus_create_simple("virtio-mmio", base, irq);
+
+        DPRINTF("Created virtio-mmio device %d: irq %d base 0x%lx\n",
+                i, xam->irqmap[VIRTIO_MMIO_IDX] + i, base);
+    }
+}
 
 void arch_handle_ioreq(XenIOState *state, ioreq_t *req)
 {
@@ -108,10 +148,14 @@ static void xen_arm_init(MachineState *machine)
     XenArmState *xam = XEN_ARM(machine);
 
     xam->state =  g_new0(XenIOState, 1);
+    xam->memmap = xen_memmap;
+    xam->irqmap = xen_irqmap;
 
     if (xen_init_ioreq(xam->state, machine->smp.cpus)) {
         return;
     }
+
+    xen_create_virtio_mmio_devices(xam);
 
     TPMBackend *be = qemu_find_tpm_be("tpm0");
     if (be == NULL) {
