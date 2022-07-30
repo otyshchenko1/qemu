@@ -150,37 +150,18 @@ void qmp_xen_set_global_dirty_log(bool enable, Error **errp)
 {
 }
 
-static int xen_init_ioreq(XenIOState *state, unsigned int max_cpus)
-{
-    xen_dmod = xendevicemodel_open(0, 0);
-    xen_xc = xc_interface_open(0, 0, 0);
-
-    if (xen_xc == NULL) {
-        perror("xen: can't open xen interface\n");
-        return -1;
-    }
-
-    xen_fmem = xenforeignmemory_open(0, 0);
-    if (xen_fmem == NULL) {
-        perror("xen: can't open xen fmem interface\n");
-        xc_interface_close(xen_xc);
-        return -1;
-    }
-
-    xen_register_ioreq(state, max_cpus, xen_memory_listener);
-
-    xenstore_record_dm_state(xenstore, "running");
-
-    return 0;
-}
-
-
 static void xen_arm_init(MachineState *machine)
 {
     DeviceState *dev;
     SysBusDevice *busdev;
     Error *errp = NULL;
     XenArmState *xam = XEN_ARM(machine);
+    int rc;
+
+    if (!xen_enabled()) {
+        error_report("xenpv machine requires the Xen accelerator");
+        exit(1);
+    }
 
     if (machine->ram_size == 0) {
         error_report("xenpv: ram_size must be specified");
@@ -191,7 +172,9 @@ static void xen_arm_init(MachineState *machine)
     xam->memmap = xen_memmap;
     xam->irqmap = xen_irqmap;
 
-    if (xen_init_ioreq(xam->state, machine->smp.cpus)) {
+    rc = xen_register_ioreq(xam->state, machine->smp.cpus, xen_memory_listener);
+    if (rc) {
+        DPRINTF("Device emulation is not available, only PV backend can be used\n");
         return;
     }
 
@@ -225,6 +208,7 @@ static void xen_arm_machine_class_init(ObjectClass *oc, void *data)
     mc->max_cpus = GUEST_MAX_VCPUS;
     /* Set explicitly here to make sure that real ram_size is passed */
     mc->default_ram_size = 0;
+    mc->default_machine_opts = "accel=xen";
     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_TPM_TIS_SYSBUS);
 }
 
