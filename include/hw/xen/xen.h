@@ -9,7 +9,6 @@
  */
 
 #include "exec/cpu-common.h"
-#include <xenstore.h>
 
 /* xen-machine.c */
 enum xen_mode {
@@ -32,6 +31,5 @@ qemu_irq *xen_interrupt_controller_init(void);
 void xenstore_store_pv_console_info(int i, Chardev *chr);
 
 void xen_register_framebuffer(struct MemoryRegion *mr);
-void xenstore_record_dm_state(struct xs_handle *xs, const char *state);
 
 #endif /* QEMU_HW_XEN_H */
