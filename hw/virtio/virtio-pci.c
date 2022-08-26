@@ -33,6 +33,7 @@
 #include "hw/pci/msix.h"
 #include "hw/loader.h"
 #include "sysemu/kvm.h"
+#include "sysemu/xen.h"
 #include "virtio-pci.h"
 #include "qemu/range.h"
 #include "hw/virtio/virtio-bus.h"
@@ -1608,6 +1609,10 @@ static void virtio_pci_pre_plugged(DeviceState *d, Error **errp)
 
     if (virtio_pci_modern(proxy)) {
         virtio_add_feature(&vdev->host_features, VIRTIO_F_VERSION_1);
+    }
+
+    if (xen_enabled()) {
+        virtio_add_feature(&vdev->host_features, VIRTIO_F_ACCESS_PLATFORM);
     }
 
     virtio_add_feature(&vdev->host_features, VIRTIO_F_BAD_FEATURE);
