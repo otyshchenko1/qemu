@@ -35,6 +35,8 @@
 #include "sysemu/tpm.h"
 #include "hw/xen/arch_hvm.h"
 #include "exec/address-spaces.h"
+#include "hw/pci-host/gpex.h"
+#include "hw/virtio/virtio-pci.h"
 
 #define TYPE_XEN_ARM  MACHINE_TYPE_NAME("xenpv")
 OBJECT_DECLARE_SIMPLE_TYPE(XenArmState, XEN_ARM)
@@ -63,19 +65,28 @@ static MemoryRegion ram_lo, ram_hi;
 
 #define VIRTIO_MMIO_DEV_SIZE   0x200
 
-#define VIRTIO_MMIO_IDX   0
+#define VIRTIO_MMIO_IDX       0
+#define VIRT_PCIE             1
+#define VIRT_PCIE_MMIO        2
+#define VIRT_PCIE_ECAM        3
+#define VIRT_PCIE_MMIO_HIGH   4
 
 #define NR_VIRTIO_MMIO_DEVICES   \
    (GUEST_VIRTIO_MMIO_SPI_LAST - GUEST_VIRTIO_MMIO_SPI_FIRST)
 
 static const MemMapEntry xen_memmap[] = {
-    [VIRTIO_MMIO_IDX] = { GUEST_VIRTIO_MMIO_BASE, VIRTIO_MMIO_DEV_SIZE },
+    [VIRTIO_MMIO_IDX]     = { GUEST_VIRTIO_MMIO_BASE, VIRTIO_MMIO_DEV_SIZE },
+    [VIRT_PCIE_MMIO]      = { GUEST_VPCI_MEM_ADDR, GUEST_VPCI_MEM_SIZE },
+    [VIRT_PCIE_ECAM]      = { GUEST_VPCI_ECAM_BASE, GUEST_VPCI_ECAM_SIZE },
+    [VIRT_PCIE_MMIO_HIGH] = { GUEST_VPCI_PREFETCH_MEM_ADDR, GUEST_VPCI_PREFETCH_MEM_SIZE },
 };
 
 static const int xen_irqmap[] = {
     [VIRTIO_MMIO_IDX] = GUEST_VIRTIO_MMIO_SPI_FIRST, /* ...to GUEST_VIRTIO_MMIO_SPI_LAST - 1 */
+    [VIRT_PCIE]       = GUEST_VIRTIO_PCI_SPI_FIRST,  /* ...to GUEST_VIRTIO_PCI_SPI_LAST - 1 */
 };
 
+/* TODO It should be xendevicemodel_set_pci_intx_level() for PCI interrupts. */
 static void xen_set_irq(void *opaque, int irq, int level)
 {
     xendevicemodel_set_irq_level(xen_dmod, xen_domid, irq, level);
@@ -130,6 +141,55 @@ static void xen_init_ram(MachineState *machine)
     }
 }
 
+static void xen_create_pcie(XenArmState *xam)
+{
+    hwaddr base_ecam = xam->memmap[VIRT_PCIE_ECAM].base;
+    hwaddr size_ecam = xam->memmap[VIRT_PCIE_ECAM].size;
+    hwaddr base_mmio = xam->memmap[VIRT_PCIE_MMIO].base;
+    hwaddr size_mmio = xam->memmap[VIRT_PCIE_MMIO].size;
+    hwaddr base_mmio_high = xam->memmap[VIRT_PCIE_MMIO_HIGH].base;
+    hwaddr size_mmio_high = xam->memmap[VIRT_PCIE_MMIO_HIGH].size;
+    MemoryRegion *mmio_alias, *mmio_alias_high, *mmio_reg;
+    MemoryRegion *ecam_alias, *ecam_reg;
+    DeviceState *dev;
+    int i;
+
+    dev = qdev_new(TYPE_GPEX_HOST);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+
+    /* Map ECAM space */
+    ecam_alias = g_new0(MemoryRegion, 1);
+    ecam_reg = sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0);
+    memory_region_init_alias(ecam_alias, OBJECT(dev), "pcie-ecam",
+                             ecam_reg, 0, size_ecam);
+    memory_region_add_subregion(get_system_memory(), base_ecam, ecam_alias);
+
+    /* Map the MMIO space */
+    mmio_alias = g_new0(MemoryRegion, 1);
+    mmio_reg = sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 1);
+    memory_region_init_alias(mmio_alias, OBJECT(dev), "pcie-mmio",
+                             mmio_reg, base_mmio, size_mmio);
+    memory_region_add_subregion(get_system_memory(), base_mmio, mmio_alias);
+
+    /* Map the MMIO_HIGH space */
+    mmio_alias_high = g_new0(MemoryRegion, 1);
+    memory_region_init_alias(mmio_alias_high, OBJECT(dev), "pcie-mmio-high",
+                             mmio_reg, base_mmio_high, size_mmio_high);
+    memory_region_add_subregion(get_system_memory(), base_mmio_high,
+                                mmio_alias_high);
+
+    /* Legacy PCI interrupts (#INTA - #INTD) */
+    for (i = 0; i < GPEX_NUM_IRQS; i++) {
+        qemu_irq irq = qemu_allocate_irq(xen_set_irq, NULL,
+                                         xam->irqmap[VIRT_PCIE] + i);
+
+        sysbus_connect_irq(SYS_BUS_DEVICE(dev), i, irq);
+        gpex_set_irq_num(GPEX_HOST(dev), i, xam->irqmap[VIRT_PCIE] + i);
+    }
+
+    DPRINTF("Created PCIe host bridge\n");
+}
+
 void arch_handle_ioreq(XenIOState *state, ioreq_t *req)
 {
     hw_error("Invalid ioreq type 0x%x\n", req->type);
@@ -180,6 +240,7 @@ static void xen_arm_init(MachineState *machine)
 
     xen_init_ram(machine);
     xen_create_virtio_mmio_devices(xam);
+    xen_create_pcie(xam);
 
     TPMBackend *be = qemu_find_tpm_be("tpm0");
     if (be == NULL) {
