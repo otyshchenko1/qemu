@@ -618,7 +618,7 @@ static void *xen_map_grant_dyn(MemoryRegion **mr, hwaddr addr, hwaddr *plen,
     unsigned int i;
     unsigned int nrefs = (page_off + *plen + XC_PAGE_SIZE - 1) >> XC_PAGE_SHIFT;
     uint32_t ref = (addr - XEN_GRANT_ADDR_OFF) >> XC_PAGE_SHIFT;
-    uint32_t *refs;
+    uint32_t *refs = NULL;
     unsigned int prot = PROT_READ;
     struct XENMappedGrantRegion *mgr = NULL;
 
