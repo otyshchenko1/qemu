@@ -37,15 +37,21 @@
 #include "migration/vmstate.h"
 #include "qemu/module.h"
 
+#include "hw/xen/xen_common.h"
+
 /****************************************************************************
  * GPEX host
  */
-
-static void gpex_set_irq(void *opaque, int irq_num, int level)
+static int xen_pci_slot_get_pirq1(PCIDevice *pci_dev, int irq_num)
 {
-    GPEXHost *s = opaque;
+    return irq_num + (PCI_SLOT(pci_dev->devfn) << 2);
+}
 
-    qemu_set_irq(s->irq[irq_num], level);
+static void xen_piix3_set_irq1(void *opaque, int irq_num, int level)
+{
+
+    xen_set_pci_intx_level(xen_domid, 0, 0, irq_num >> 2,
+                           irq_num & 3, level);
 }
 
 int gpex_set_irq_num(GPEXHost *s, int index, int gsi)
@@ -133,8 +139,8 @@ static void gpex_host_realize(DeviceState *dev, Error **errp)
         s->irq_num[i] = -1;
     }
 
-    pci->bus = pci_register_root_bus(dev, "pcie.0", gpex_set_irq,
-                                     pci_swizzle_map_irq_fn, s, &s->io_mmio,
+    pci->bus = pci_register_root_bus(dev, "pcie.0", xen_piix3_set_irq1,
+                                     xen_pci_slot_get_pirq1, s, &s->io_mmio,
                                      &s->io_ioport, 0, 4, TYPE_PCIE_BUS);
 
     pci_bus_set_route_irq_fn(pci->bus, gpex_route_intx_pin_to_irq);
