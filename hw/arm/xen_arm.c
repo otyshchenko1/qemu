@@ -92,11 +92,6 @@ static void xen_set_irq(void *opaque, int irq, int level)
     xendevicemodel_set_irq_level(xen_dmod, xen_domid, irq, level);
 }
 
-static void xen_set_pci_irq(void *opaque, int irq, int level)
-{
-    xendevicemodel_set_pci_intx_level(xen_dmod, xen_domid, 0, 0, 0, irq, level);
-}
-
 static void xen_create_virtio_mmio_devices(XenArmState *xam)
 {
     hwaddr size = xam->memmap[VIRTIO_MMIO_IDX].size;
@@ -188,10 +183,11 @@ static void xen_create_pcie(XenArmState *xam)
 
     /* Legacy PCI interrupts (#INTA - #INTD) */
     for (i = 0; i < GPEX_NUM_IRQS; i++) {
-        qemu_irq irq = qemu_allocate_irq(xen_set_pci_irq, NULL, i);
+        qemu_irq irq = qemu_allocate_irq(xen_set_irq, NULL,
+                                         xam->irqmap[VIRT_PCIE] + i);
 
         sysbus_connect_irq(SYS_BUS_DEVICE(dev), i, irq);
-        gpex_set_irq_num(GPEX_HOST(dev), i, i);
+        gpex_set_irq_num(GPEX_HOST(dev), i, xam->irqmap[VIRT_PCIE] + i);
     }
 
     DPRINTF("Created PCIe host bridge\n");
