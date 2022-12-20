@@ -116,6 +116,7 @@ static uint32_t virtio_snd_handle_jack_info(VirtIOSound *s,
     virtio_snd_query_info req;
     size_t sz = iov_to_buf(elem->out_sg, elem->out_num, 0, &req, sizeof(req));
     assert(sz == sizeof(virtio_snd_query_info));
+    virtio_snd_jack_info *jack_info = g_new0(virtio_snd_jack_info, req.count);
 
     virtio_snd_hdr resp;
 
@@ -128,7 +129,6 @@ static uint32_t virtio_snd_handle_jack_info(VirtIOSound *s,
         goto done;
     }
 
-    virtio_snd_jack_info *jack_info = g_new0(virtio_snd_jack_info, req.count);
     for (int i = req.start_id; i < req.count + req.start_id; i++) {
         trace_virtio_snd_handle_jack_info(i);
         virtio_snd_jack *jack = virtio_snd_get_jack(s, i);
@@ -235,6 +235,7 @@ static uint32_t virtio_snd_handle_pcm_info(VirtIOSound *s,
     uint32_t sz;
     sz = iov_to_buf(elem->out_sg, elem->out_num, 0, &req, sizeof(req));
     assert(sz == sizeof(virtio_snd_query_info));
+    virtio_snd_pcm_info *pcm_info = g_new0(virtio_snd_pcm_info, req.count);
 
     virtio_snd_hdr resp;
     if (iov_size(elem->in_sg, elem->in_num) <
@@ -247,7 +248,6 @@ static uint32_t virtio_snd_handle_pcm_info(VirtIOSound *s,
     }
 
     virtio_snd_pcm_stream *stream;
-    virtio_snd_pcm_info *pcm_info = g_new0(virtio_snd_pcm_info, req.count);
     for (int i = req.start_id; i < req.start_id + req.count; i++) {
         trace_virtio_snd_handle_pcm_info(i);
         stream = virtio_snd_pcm_get_stream(s, i);
