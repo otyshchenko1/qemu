@@ -91,8 +91,8 @@ void xen_device_realize(DeviceListener *listener, DeviceState *dev);
 void xen_device_unrealize(DeviceListener *listener, DeviceState *dev);
 
 void xen_hvm_change_state_handler(void *opaque, bool running, RunState rstate);
-void xen_register_ioreq(XenIOState *state, unsigned int max_cpus,
-                        MemoryListener xen_memory_listener);
+int xen_register_ioreq(XenIOState *state, unsigned int max_cpus,
+                       MemoryListener xen_memory_listener);
 
 void cpu_ioreq_pio(ioreq_t *req);
 #endif /* HW_XEN_HVM_COMMON_H */

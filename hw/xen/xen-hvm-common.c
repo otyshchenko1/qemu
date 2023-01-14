@@ -764,10 +764,10 @@ void xen_ram_alloc(ram_addr_t ram_addr, ram_addr_t size, MemoryRegion *mr,
     g_free(pfn_list);
 }
 
-void xen_register_ioreq(XenIOState *state, unsigned int max_cpus,
-                        MemoryListener xen_memory_listener)
+int xen_register_ioreq(XenIOState *state, unsigned int max_cpus,
+                       MemoryListener xen_memory_listener)
 {
-    int i, rc;
+    int i, rc = -1;
 
     state->xce_handle = xenevtchn_open(NULL, 0);
     if (state->xce_handle == NULL) {
@@ -850,6 +850,8 @@ void xen_register_ioreq(XenIOState *state, unsigned int max_cpus,
     QLIST_INIT(&state->dev_list);
     device_listener_register(&state->device_listener);
 
+    rc = 0;
+
 no_ioreq:
     xen_bus_init();
 
@@ -860,8 +862,9 @@ no_ioreq:
     }
     xen_be_register_common();
 
-    return;
+    return rc;
 err:
     error_report("xen hardware virtual machine initialisation failed");
     exit(1);
+    return rc;
 }
