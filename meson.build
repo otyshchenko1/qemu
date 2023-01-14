@@ -350,7 +350,11 @@ if get_option('kvm').allowed() and targetos == 'linux'
 endif
 if get_option('xen').allowed() and 'CONFIG_XEN_BACKEND' in config_host
   accelerators += 'CONFIG_XEN'
-  have_xen_pci_passthrough = get_option('xen_pci_passthrough').allowed() and targetos == 'linux'
+  if cpu in ['x86', 'x86_64']
+    have_xen_pci_passthrough = get_option('xen_pci_passthrough').allowed() and targetos == 'linux'
+  else
+    have_xen_pci_passthrough = false
+  endif
 else
   have_xen_pci_passthrough = false
 endif
