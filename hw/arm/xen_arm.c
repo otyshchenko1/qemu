@@ -118,7 +118,7 @@ static void xen_enable_tpm(void)
     sysbus_realize_and_unref(busdev, &error_fatal);
     sysbus_mmio_map(busdev, 0, GUEST_TPM_BASE);
 
-    DPRINTF("Connected tpmdev at address 0x%lx\n", GUEST_TPM_BASE);
+    DPRINTF("Connected tpmdev at address 0x%llx\n", GUEST_TPM_BASE);
 #endif
 }
 
@@ -143,7 +143,7 @@ static void xen_arm_machine_class_init(ObjectClass *oc, void *data)
     MachineClass *mc = MACHINE_CLASS(oc);
     mc->desc = "Xen Para-virtualized PC";
     mc->init = xen_arm_init;
-    mc->max_cpus = 1;
+    mc->max_cpus = GUEST_MAX_VCPUS;
     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_TPM_TIS_SYSBUS);
 }
 
