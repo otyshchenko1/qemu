@@ -24,6 +24,8 @@ DeviceListener xen_device_listener = {
     .unrealize = xen_device_unrealize,
 };
 
+uint16_t xen_pci_segment = 0;
+
 static void xen_set_memory(struct MemoryListener *listener,
                            MemoryRegionSection *section,
                            bool add)
@@ -346,7 +348,12 @@ static void cpu_ioreq_config(XenIOState *state, ioreq_t *req)
     }
 
     QLIST_FOREACH(xendev, &state->dev_list, entry) {
-        if (xendev->sbdf != sbdf) {
+        /*
+         * As we append xen_pci_segment just before forming dm_op in
+         * xen_map_pcidev() we need to check with appended xen_pci_segment
+         * here as well.
+         */
+        if ((xendev->sbdf | (xen_pci_segment << 16)) != sbdf) {
             continue;
         }
 
